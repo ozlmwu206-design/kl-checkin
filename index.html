@@ -1,0 +1,214 @@
+<!DOCTYPE html>
+<html>
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>打卡</title>
+<script src="https://static.line-scdn.net/liff/edge/2/sdk.js"></script>
+<style>
+  * { box-sizing: border-box; }
+  body {
+    font-family: -apple-system, BlinkMacSystemFont, "Noto Sans TC", "Noto Sans Thai", "PingFang TC", sans-serif;
+    text-align: center;
+    padding: 24px 16px;
+    background: #f5f6f7;
+    color: #222;
+    margin: 0;
+  }
+  #langBar { margin-bottom: 16px; }
+  select { padding: 8px 12px; font-size: 14px; border-radius: 8px; border: 1px solid #ccc; }
+  h1 { font-size: 20px; margin: 8px 0 4px; }
+  #userInfo { color: #555; margin-bottom: 24px; min-height: 20px; }
+  .btn {
+    display: block;
+    width: 100%;
+    max-width: 320px;
+    margin: 12px auto;
+    padding: 18px;
+    font-size: 18px;
+    font-weight: bold;
+    border: none;
+    border-radius: 12px;
+    color: #fff;
+    cursor: pointer;
+  }
+  .btn:disabled { opacity: 0.5; }
+  .btn-in { background: #06C755; }
+  .btn-out { background: #e05252; }
+  #status {
+    margin-top: 20px;
+    font-size: 15px;
+    color: #333;
+    white-space: pre-wrap;
+    max-width: 340px;
+    margin-left: auto;
+    margin-right: auto;
+  }
+  #uidBox {
+    margin-top: 24px;
+    font-size: 12px;
+    color: #888;
+    word-break: break-all;
+    max-width: 340px;
+    margin-left: auto;
+    margin-right: auto;
+  }
+</style>
+</head>
+<body>
+
+<div id="langBar">
+  <select id="langSelect" onchange="setLang(this.value)">
+    <option value="zh">繁體中文</option>
+    <option value="th">ภาษาไทย</option>
+  </select>
+</div>
+
+<h1 id="title">員工打卡</h1>
+<div id="userInfo">載入中...</div>
+
+<button class="btn btn-in" id="btnIn" onclick="checkin('上班')">上班打卡</button>
+<button class="btn btn-out" id="btnOut" onclick="checkin('下班')">下班打卡</button>
+
+<div id="status"></div>
+<div id="uidBox"></div>
+
+<script>
+// =====================================================================
+// 部署後請把下面兩個值換成你自己的：
+//   1) LIFF_ID    -> 在 LINE Developers 建立 LIFF 後拿到的 ID
+//   2) SCRIPT_URL -> Apps Script 部署成「網頁應用程式」後拿到的網址（結尾 /exec）
+// =====================================================================
+const LIFF_ID = 'YOUR_LIFF_ID';
+const SCRIPT_URL = 'YOUR_SCRIPT_URL';
+
+const I18N = {
+  zh: {
+    title: '員工打卡',
+    in: '上班打卡',
+    out: '下班打卡',
+    loading: '載入中...',
+    hello: '哈囉，',
+    getLoc: '正在取得定位...',
+    sending: '送出中...',
+    within: '✅ 打卡成功（工地範圍內：',
+    outside: '⚠️ 打卡成功（超出工地範圍，距離最近工地約 ',
+    noConfig: 'ℹ️ 打卡成功（尚未設定工地座標，未做定位比對）',
+    meters: ' 公尺，已標記供主管確認）',
+    notFound: '找不到您的帳號，請把下面這串 LINE ID 提供給管理者，將您加入使用者名單後再試一次。',
+    disabled: '您的帳號目前為停用狀態，請聯絡管理者。',
+    error: '發生錯誤，請重試或聯絡管理者。',
+    locError: '無法取得定位，請確認已開啟手機的定位權限。',
+    yourId: '您的 LINE ID（設定用）：',
+  },
+  th: {
+    title: 'ลงเวลาทำงาน',
+    in: 'เข้างาน',
+    out: 'เลิกงาน',
+    loading: 'กำลังโหลด...',
+    hello: 'สวัสดี, ',
+    getLoc: 'กำลังระบุตำแหน่ง...',
+    sending: 'กำลังส่งข้อมูล...',
+    within: '✅ บันทึกสำเร็จ (อยู่ในพื้นที่ไซต์งาน: ',
+    outside: '⚠️ บันทึกสำเร็จ (อยู่นอกพื้นที่ไซต์งาน ห่างประมาณ ',
+    noConfig: 'ℹ️ บันทึกสำเร็จ (ยังไม่ได้ตั้งค่าพิกัดไซต์งาน จึงไม่ได้ตรวจสอบตำแหน่ง)',
+    meters: ' เมตร ระบบแจ้งหัวหน้างานตรวจสอบ)',
+    notFound: 'ไม่พบบัญชีของคุณ กรุณาส่ง LINE ID ด้านล่างนี้ให้ผู้ดูแลระบบเพื่อเพิ่มชื่อคุณก่อน แล้วลองใหม่อีกครั้ง',
+    disabled: 'บัญชีของคุณถูกระงับการใช้งาน กรุณาติดต่อผู้ดูแลระบบ',
+    error: 'เกิดข้อผิดพลาด กรุณาลองใหม่หรือติดต่อผู้ดูแลระบบ',
+    locError: 'ไม่สามารถระบุตำแหน่งได้ กรุณาเปิดสิทธิ์การเข้าถึงตำแหน่งบนมือถือ',
+    yourId: 'LINE ID ของคุณ (สำหรับตั้งค่า): ',
+  },
+};
+
+let lang = 'zh';
+let profile = null;
+
+function t(key) {
+  return I18N[lang][key];
+}
+
+function setLang(l) {
+  lang = l;
+  document.getElementById('title').innerText = t('title');
+  document.getElementById('btnIn').innerText = t('in');
+  document.getElementById('btnOut').innerText = t('out');
+  if (profile) {
+    document.getElementById('userInfo').innerText = t('hello') + profile.displayName;
+  }
+}
+
+async function callApi(payload) {
+  const res = await fetch(SCRIPT_URL, {
+    method: 'POST',
+    body: JSON.stringify(payload),
+  });
+  return res.json();
+}
+
+async function init() {
+  try {
+    await liff.init({ liffId: LIFF_ID });
+    if (!liff.isLoggedIn()) {
+      liff.login();
+      return;
+    }
+    profile = await liff.getProfile();
+    document.getElementById('userInfo').innerText = t('hello') + profile.displayName;
+    document.getElementById('uidBox').innerText = t('yourId') + profile.userId;
+
+    const who = await callApi({ action: 'whoami', lineUserId: profile.userId });
+    if (!who.ok) {
+      document.getElementById('btnIn').disabled = true;
+      document.getElementById('btnOut').disabled = true;
+      document.getElementById('status').innerText =
+        who.error === 'user_disabled' ? t('disabled') : t('notFound');
+    }
+  } catch (err) {
+    document.getElementById('userInfo').innerText = t('error');
+    document.getElementById('status').innerText = String(err);
+  }
+}
+
+function checkin(type) {
+  if (!profile) return;
+  document.getElementById('status').innerText = t('getLoc');
+  navigator.geolocation.getCurrentPosition(
+    async (pos) => {
+      document.getElementById('status').innerText = t('sending');
+      try {
+        const json = await callApi({
+          action: 'checkin',
+          lineUserId: profile.userId,
+          type: type,
+          lat: pos.coords.latitude,
+          lng: pos.coords.longitude,
+        });
+        if (!json.ok) {
+          document.getElementById('status').innerText =
+            json.error === 'user_disabled' ? t('disabled') : t('notFound');
+          return;
+        }
+        if (!json.hasSiteConfig) {
+          document.getElementById('status').innerText = t('noConfig');
+        } else if (json.withinRange) {
+          document.getElementById('status').innerText = t('within') + json.nearestSite + '）';
+        } else {
+          document.getElementById('status').innerText =
+            t('outside') + json.distance + t('meters');
+        }
+      } catch (err) {
+        document.getElementById('status').innerText = t('error');
+      }
+    },
+    () => {
+      document.getElementById('status').innerText = t('locError');
+    },
+    { enableHighAccuracy: true, timeout: 10000 }
+  );
+}
+
+init();
+</script>
+</body>
+</html>
