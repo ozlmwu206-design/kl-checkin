@@ -18,7 +18,31 @@
   #langBar { margin-bottom: 16px; }
   select { padding: 8px 12px; font-size: 14px; border-radius: 8px; border: 1px solid #ccc; }
   h1 { font-size: 20px; margin: 8px 0 4px; }
-  #userInfo { color: #555; margin-bottom: 24px; min-height: 20px; }
+  #userInfo { color: #555; margin-bottom: 16px; min-height: 20px; }
+
+  #workTypeSection { max-width: 320px; margin: 0 auto 20px; }
+  #workTypeLabel { font-size: 14px; color: #555; margin-bottom: 10px; }
+  #workTypeGrid {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 10px;
+  }
+  .worktype-btn {
+    padding: 14px 6px;
+    font-size: 15px;
+    font-weight: bold;
+    border-radius: 10px;
+    border: 2px solid #ccc;
+    background: #fff;
+    color: #444;
+    cursor: pointer;
+  }
+  .worktype-btn.active {
+    border-color: #06C755;
+    background: #e6f9ee;
+    color: #06773b;
+  }
+
   .btn {
     display: block;
     width: 100%;
@@ -67,8 +91,13 @@
 <h1 id="title">員工打卡</h1>
 <div id="userInfo">載入中...</div>
 
-<button class="btn btn-in" id="btnIn" onclick="checkin('上班')">上班打卡</button>
-<button class="btn btn-out" id="btnOut" onclick="checkin('下班')">下班打卡</button>
+<div id="workTypeSection">
+  <div id="workTypeLabel">請先選擇今天的工種</div>
+  <div id="workTypeGrid"></div>
+</div>
+
+<button class="btn btn-in" id="btnIn" onclick="checkin('上班')" disabled>上班打卡</button>
+<button class="btn btn-out" id="btnOut" onclick="checkin('下班')" disabled>下班打卡</button>
 
 <div id="status"></div>
 <div id="uidBox"></div>
@@ -79,8 +108,16 @@
 //   1) LIFF_ID    -> 在 LINE Developers 建立 LIFF 後拿到的 ID
 //   2) SCRIPT_URL -> Apps Script 部署成「網頁應用程式」後拿到的網址（結尾 /exec）
 // =====================================================================
-const LIFF_ID = '2011380221-wdbTlkAs';
-const SCRIPT_URL = 'https://script.google.com/macros/s/AKfycbxTMJg12pIJyrurHXz5yX6nbb6mGOeXJu0cBhrtGnN5CYG2YvdPCSD7ogxDotYxE6WYnQ/exec';
+const LIFF_ID = 'YOUR_LIFF_ID';
+const SCRIPT_URL = 'YOUR_SCRIPT_URL';
+
+// 工種固定四選一，跟後端 Code.gs 的 WORK_TYPES 要一致
+const WORK_TYPES = [
+  { value: '公司', zh: '公司', th: 'บริษัท' },
+  { value: '鋼筋', zh: '鋼筋', th: 'งานเหล็กเสริม' },
+  { value: '模板', zh: '模板', th: 'งานแบบหล่อ' },
+  { value: '水電', zh: '水電', th: 'งานประปาไฟฟ้า' },
+];
 
 const I18N = {
   zh: {
@@ -89,6 +126,8 @@ const I18N = {
     out: '下班打卡',
     loading: '載入中...',
     hello: '哈囉，',
+    chooseWorkType: '請先選擇今天的工種',
+    workTypeRequired: '請先選擇工種，再打卡',
     getLoc: '正在取得定位...',
     sending: '送出中...',
     within: '✅ 打卡成功（工地範圍內：',
@@ -107,6 +146,8 @@ const I18N = {
     out: 'เลิกงาน',
     loading: 'กำลังโหลด...',
     hello: 'สวัสดี, ',
+    chooseWorkType: 'กรุณาเลือกประเภทงานวันนี้ก่อน',
+    workTypeRequired: 'กรุณาเลือกประเภทงานก่อนลงเวลา',
     getLoc: 'กำลังระบุตำแหน่ง...',
     sending: 'กำลังส่งข้อมูล...',
     within: '✅ บันทึกสำเร็จ (อยู่ในพื้นที่ไซต์งาน: ',
@@ -123,9 +164,36 @@ const I18N = {
 
 let lang = 'zh';
 let profile = null;
+let userOk = false;      // whoami 驗證是否通過
+let selectedWorkType = ''; // 目前選擇的工種
 
 function t(key) {
   return I18N[lang][key];
+}
+
+function renderWorkTypeButtons() {
+  const grid = document.getElementById('workTypeGrid');
+  grid.innerHTML = '';
+  WORK_TYPES.forEach((wt) => {
+    const btn = document.createElement('button');
+    btn.type = 'button';
+    btn.className = 'worktype-btn' + (selectedWorkType === wt.value ? ' active' : '');
+    btn.innerText = wt[lang];
+    btn.onclick = () => selectWorkType(wt.value);
+    grid.appendChild(btn);
+  });
+}
+
+function selectWorkType(value) {
+  selectedWorkType = value;
+  renderWorkTypeButtons();
+  updateActionButtons();
+}
+
+function updateActionButtons() {
+  const enable = userOk && !!selectedWorkType;
+  document.getElementById('btnIn').disabled = !enable;
+  document.getElementById('btnOut').disabled = !enable;
 }
 
 function setLang(l) {
@@ -133,6 +201,8 @@ function setLang(l) {
   document.getElementById('title').innerText = t('title');
   document.getElementById('btnIn').innerText = t('in');
   document.getElementById('btnOut').innerText = t('out');
+  document.getElementById('workTypeLabel').innerText = t('chooseWorkType');
+  renderWorkTypeButtons();
   if (profile) {
     document.getElementById('userInfo').innerText = t('hello') + profile.displayName;
   }
@@ -147,6 +217,7 @@ async function callApi(payload) {
 }
 
 async function init() {
+  renderWorkTypeButtons();
   try {
     await liff.init({ liffId: LIFF_ID });
     if (!liff.isLoggedIn()) {
@@ -159,10 +230,13 @@ async function init() {
 
     const who = await callApi({ action: 'whoami', lineUserId: profile.userId });
     if (!who.ok) {
-      document.getElementById('btnIn').disabled = true;
-      document.getElementById('btnOut').disabled = true;
+      userOk = false;
+      updateActionButtons();
       document.getElementById('status').innerText =
         who.error === 'user_disabled' ? t('disabled') : t('notFound');
+    } else {
+      userOk = true;
+      updateActionButtons();
     }
   } catch (err) {
     document.getElementById('userInfo').innerText = t('error');
@@ -171,7 +245,11 @@ async function init() {
 }
 
 function checkin(type) {
-  if (!profile) return;
+  if (!profile || !userOk) return;
+  if (!selectedWorkType) {
+    document.getElementById('status').innerText = t('workTypeRequired');
+    return;
+  }
   document.getElementById('status').innerText = t('getLoc');
   navigator.geolocation.getCurrentPosition(
     async (pos) => {
@@ -181,6 +259,7 @@ function checkin(type) {
           action: 'checkin',
           lineUserId: profile.userId,
           type: type,
+          workType: selectedWorkType,
           lat: pos.coords.latitude,
           lng: pos.coords.longitude,
         });
