@@ -118,8 +118,8 @@
 //   1) LIFF_ID    -> 在 LINE Developers 建立 LIFF 後拿到的 ID
 //   2) SCRIPT_URL -> Apps Script 部署成「網頁應用程式」後拿到的網址（結尾 /exec）
 // =====================================================================
-const LIFF_ID = '2011380221-wdbTlkAs';
-const SCRIPT_URL = 'https://script.google.com/macros/s/AKfycbxTMJg12pIJyrurHXz5yX6nbb6mGOeXJu0cBhrtGnN5CYG2YvdPCSD7ogxDotYxE6WYnQ/exec';
+const LIFF_ID = 'YOUR_LIFF_ID';
+const SCRIPT_URL = 'YOUR_SCRIPT_URL';
 
 // 工種固定四選一，跟後端 Code.gs 的 WORK_TYPES 要一致
 const WORK_TYPES = [
@@ -171,6 +171,42 @@ const I18N = {
     yourId: 'LINE ID ของคุณ (สำหรับตั้งค่า): ',
   },
 };
+
+// 上午/下午 + 上班/下班 四種組合的中/泰文顯示文字，打卡成功或重複打卡提示都會用到
+const SEGMENT_TYPE_LABELS = {
+  zh: {
+    '上午上班': '上午上班',
+    '上午下班': '上午下班',
+    '下午上班': '下午上班',
+    '下午下班': '下午下班',
+  },
+  th: {
+    '上午上班': 'เข้างานช่วงเช้า',
+    '上午下班': 'เลิกงานช่วงเช้า',
+    '下午上班': 'เข้างานช่วงบ่าย',
+    '下午下班': 'เลิกงานช่วงบ่าย',
+  },
+};
+
+function segmentTypeLabel(segment, type) {
+  const map = SEGMENT_TYPE_LABELS[lang] || SEGMENT_TYPE_LABELS.zh;
+  return map[segment + type] || segment + type;
+}
+
+// 打卡成功／重複打卡的訊息都需要帶入時間與時段類型，用函式產生比較方便維護
+function buildSuccessMessage(json) {
+  const label = segmentTypeLabel(json.segment, json.type);
+  return lang === 'zh'
+    ? `✅ 打卡成功（${label} ${json.time}）`
+    : `✅ บันทึกเวลาสำเร็จ (${label} ${json.time} น.)`;
+}
+
+function buildDuplicateMessage(json) {
+  const label = segmentTypeLabel(json.segment, json.type);
+  return lang === 'zh'
+    ? `您已於 ${json.time} 打過「${label}」卡，請勿重複打卡，可以放心離開頁面。`
+    : `คุณลงเวลา "${label}" ไปแล้วเมื่อเวลา ${json.time} น. กรุณาอย่าลงเวลาซ้ำ ออกจากหน้านี้ได้เลย`;
+}
 
 let lang = 'zh';
 let profile = null;
@@ -298,7 +334,9 @@ function checkin(type) {
           json.error === 'user_disabled' ? t('disabled') : t('notFound');
         return;
       }
-      document.getElementById('status').innerText = t('success');
+      document.getElementById('status').innerText = json.duplicate
+        ? buildDuplicateMessage(json)
+        : buildSuccessMessage(json);
     })
     .catch(() => {
       document.getElementById('status').innerText = t('error');
