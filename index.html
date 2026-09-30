@@ -82,6 +82,52 @@
     margin-left: auto;
     margin-right: auto;
   }
+
+  /* 打卡結果彈窗：畫面正中央彈出，不管手機解析度多少、頁面捲到哪裡都看得到 */
+  .modal-overlay {
+    display: none;
+    position: fixed;
+    inset: 0;
+    background: rgba(0, 0, 0, 0.55);
+    z-index: 1000;
+    align-items: center;
+    justify-content: center;
+    padding: 20px;
+  }
+  .modal-overlay.show { display: flex; }
+  .modal-box {
+    background: #fff;
+    border-radius: 18px;
+    padding: 30px 22px 22px;
+    max-width: 320px;
+    width: 100%;
+    text-align: center;
+    box-shadow: 0 10px 40px rgba(0, 0, 0, 0.3);
+    animation: modalPop 0.18s ease-out;
+  }
+  @keyframes modalPop {
+    from { transform: scale(0.9); opacity: 0; }
+    to { transform: scale(1); opacity: 1; }
+  }
+  .modal-icon { font-size: 50px; margin-bottom: 6px; line-height: 1; }
+  .modal-title-zh { font-size: 21px; font-weight: bold; color: #222; }
+  .modal-title-th { font-size: 16px; font-weight: bold; color: #777; margin-top: 3px; margin-bottom: 14px; }
+  .modal-divider { border-top: 1px solid #eee; margin: 2px 0 14px; }
+  .modal-body-zh { font-size: 17px; color: #333; line-height: 1.5; }
+  .modal-body-th { font-size: 15px; color: #1a6fb0; line-height: 1.5; margin-top: 6px; }
+  .modal-close-btn {
+    margin-top: 22px;
+    width: 100%;
+    padding: 14px;
+    font-size: 16px;
+    font-weight: bold;
+    border: none;
+    border-radius: 10px;
+    background: #06C755;
+    color: #fff;
+    cursor: pointer;
+  }
+  .modal-box.warning .modal-close-btn { background: #e8a33d; }
 </style>
 </head>
 <body>
@@ -111,6 +157,19 @@
 
 <div id="status"></div>
 <div id="uidBox"></div>
+
+<!-- 打卡結果彈窗：中泰文同時顯示，不受目前選擇的介面語言影響，確保移工一定看得懂 -->
+<div id="modalOverlay" class="modal-overlay" onclick="if (event.target === this) closeModal();">
+  <div class="modal-box" id="modalBox">
+    <div class="modal-icon" id="modalIcon">✅</div>
+    <div class="modal-title-zh" id="modalTitleZh"></div>
+    <div class="modal-title-th" id="modalTitleTh"></div>
+    <div class="modal-divider"></div>
+    <div class="modal-body-zh" id="modalBodyZh"></div>
+    <div class="modal-body-th" id="modalBodyTh"></div>
+    <button class="modal-close-btn" onclick="closeModal()">確定 / ตกลง</button>
+  </div>
+</div>
 
 <script>
 // =====================================================================
@@ -206,6 +265,46 @@ function buildDuplicateMessage(json) {
   return lang === 'zh'
     ? `您已於 ${json.time} 打過「${label}」卡，請勿重複打卡，可以放心離開頁面。`
     : `คุณลงเวลา "${label}" ไปแล้วเมื่อเวลา ${json.time} น. กรุณาอย่าลงเวลาซ้ำ ออกจากหน้านี้ได้เลย`;
+}
+
+// 彈窗一律中泰文同時顯示（不看目前選的介面語言），確保移工不管有沒有切換語言都看得懂
+function buildModalContent(json) {
+  const zhLabel = SEGMENT_TYPE_LABELS.zh[json.segment + json.type] || json.segment + json.type;
+  const thLabel = SEGMENT_TYPE_LABELS.th[json.segment + json.type] || json.segment + json.type;
+  if (json.duplicate) {
+    return {
+      icon: '⚠️',
+      variant: 'warning',
+      zhTitle: '請勿重複打卡',
+      thTitle: 'กรุณาอย่าลงเวลาซ้ำ',
+      zhBody: `您已於 ${json.time} 打過「${zhLabel}」卡\n不用再按囉，可以放心離開頁面`,
+      thBody: `คุณลงเวลา "${thLabel}" ไปแล้วเมื่อเวลา ${json.time} น.\nไม่ต้องกดซ้ำนะ ออกจากหน้านี้ได้เลย`,
+    };
+  }
+  return {
+    icon: '✅',
+    variant: 'success',
+    zhTitle: '打卡成功',
+    thTitle: 'บันทึกเวลาสำเร็จ',
+    zhBody: `${zhLabel}　${json.time}`,
+    thBody: `${thLabel}　เวลา ${json.time} น.`,
+  };
+}
+
+function openModal(content) {
+  document.getElementById('modalIcon').innerText = content.icon;
+  document.getElementById('modalTitleZh').innerText = content.zhTitle;
+  document.getElementById('modalTitleTh').innerText = content.thTitle;
+  document.getElementById('modalBodyZh').innerText = content.zhBody;
+  document.getElementById('modalBodyTh').innerText = content.thBody;
+  const box = document.getElementById('modalBox');
+  box.classList.remove('success', 'warning');
+  box.classList.add(content.variant);
+  document.getElementById('modalOverlay').classList.add('show');
+}
+
+function closeModal() {
+  document.getElementById('modalOverlay').classList.remove('show');
 }
 
 let lang = 'zh';
@@ -337,6 +436,7 @@ function checkin(type) {
       document.getElementById('status').innerText = json.duplicate
         ? buildDuplicateMessage(json)
         : buildSuccessMessage(json);
+      openModal(buildModalContent(json));
     })
     .catch(() => {
       document.getElementById('status').innerText = t('error');
